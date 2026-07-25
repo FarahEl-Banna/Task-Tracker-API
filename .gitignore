@@ -1,0 +1,29 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+venv/
+env/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SQLite database (per ADR-001, added in a later milestone)
+*.db
+*.db-journal
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Packaging
+*.egg-info/
+build/
+dist/
