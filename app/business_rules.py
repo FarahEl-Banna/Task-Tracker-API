@@ -20,3 +20,13 @@ def validate_status_transition(current: TaskStatus, new: TaskStatus) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid status transition from {current.value} to {new.value}. Allowed transitions: {allowed}",
         )
+
+
+MAX_COMMENT_LENGTH = 1000
+
+
+def validate_comment_text(text: str) -> None:
+    if not text.strip():
+        raise ValueError("comment text cannot be blank")
+    if len(text) > MAX_COMMENT_LENGTH:
+        raise ValueError(f"comment text must be {MAX_COMMENT_LENGTH} characters or fewer")

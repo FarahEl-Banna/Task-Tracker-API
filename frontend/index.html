@@ -188,9 +188,11 @@
         .card-actions {
             display: flex;
             justify-content: flex-end;
+            gap: 6px;
         }
 
-        .edit-btn {
+        .edit-btn,
+        .comments-btn {
             border: 1px solid var(--border);
             background: var(--surface-muted);
             color: var(--text);
@@ -340,6 +342,69 @@
             justify-content: flex-end;
             gap: 8px;
             margin-top: 4px;
+        }
+
+        .comment-list {
+            list-style: none;
+            margin: 0 0 10px;
+            padding: 0;
+            display: grid;
+            gap: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .comment-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.86rem;
+        }
+
+        .comment-item p {
+            margin: 0 0 2px;
+            word-break: break-word;
+        }
+
+        .comment-timestamp {
+            color: var(--muted);
+            font-size: 0.76rem;
+        }
+
+        .comment-delete-btn {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            line-height: 1;
+            padding: 2px 4px;
+            flex: 0 0 auto;
+        }
+
+        .comment-empty {
+            color: var(--muted);
+            font-size: 0.86rem;
+            margin: 0 0 10px;
+        }
+
+        .comment-form {
+            display: flex;
+            gap: 8px;
+        }
+
+        .comment-form input {
+            flex: 1 1 auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font: inherit;
+            font-size: 0.88rem;
         }
 
         .priority-pill {
@@ -520,6 +585,23 @@
         </form>
     </div>
 </div>
+<div class="modal-overlay" id="comments-modal-overlay" hidden>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="comments-modal-title">
+        <div class="modal-header">
+            <h2 id="comments-modal-title">Comments</h2>
+            <button class="modal-close-btn" id="comments-modal-close" type="button" aria-label="Close dialog">×</button>
+        </div>
+        <div class="comments-section" id="comments-section">
+            <p class="comment-empty" id="comment-empty-state">No comments yet.</p>
+            <ul class="comment-list" id="comment-list"></ul>
+            <div class="comment-form">
+                <input id="comment-text-input" type="text" placeholder="Add a comment..." autocomplete="off">
+                <button class="secondary-btn" id="add-comment-btn" type="button">Add comment</button>
+            </div>
+            <div class="field-error" id="comment-error"></div>
+        </div>
+    </div>
+</div>
 </body>
 
 <script>
@@ -531,6 +613,7 @@
         { key: 'Done', label: 'Done' }
     ];
     const PRIORITY_ORDER = { High: 3, Medium: 2, Low: 1 };
+    const MAX_COMMENT_LENGTH = 1000;
     const board = document.getElementById('board');
     const modalOverlay = document.getElementById('task-modal-overlay');
     const modalTitle = document.getElementById('task-modal-title');
@@ -546,6 +629,15 @@
     const searchInput = document.getElementById('search-input');
     const assigneeFilterInput = document.getElementById('assignee-filter');
     const priorityFilterSelect = document.getElementById('priority-filter');
+    const commentsModalOverlay = document.getElementById('comments-modal-overlay');
+    const commentsModalTitle = document.getElementById('comments-modal-title');
+    const commentList = document.getElementById('comment-list');
+    const commentEmptyState = document.getElementById('comment-empty-state');
+    const commentTextInput = document.getElementById('comment-text-input');
+    const addCommentButton = document.getElementById('add-comment-btn');
+    const commentError = document.getElementById('comment-error');
+    let activeCommentsTaskId = null;
+    let isSubmittingComment = false;
 
     let tasks = [];
     let boardState = 'loading';
@@ -602,6 +694,169 @@
             }
         } catch (error) {
             // Leave the existing assignee options in place if the request fails.
+        }
+    }
+
+    async function fetchComments(taskId) {
+        const response = await fetch(`${API_BASE}/tasks/${taskId}/comments`);
+        if (!response.ok) {
+            throw new Error('Request failed');
+        }
+        return response.json();
+    }
+
+    function postComment(taskId, text) {
+        return fetch(`${API_BASE}/tasks/${taskId}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+    }
+
+    function deleteCommentById(commentId) {
+        return fetch(`${API_BASE}/comments/${commentId}`, { method: 'DELETE' });
+    }
+
+    function extractCommentErrorMessage(errorBody) {
+        const detail = errorBody && errorBody.detail;
+        if (typeof detail === 'string') {
+            return detail;
+        }
+        if (Array.isArray(detail) && detail.length) {
+            return detail[0].msg || null;
+        }
+        return null;
+    }
+
+    function formatCommentTimestamp(isoString) {
+        const date = new Date(isoString);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+        return date.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        });
+    }
+
+    function renderComments(comments) {
+        if (!comments.length) {
+            commentEmptyState.hidden = false;
+            commentList.innerHTML = '';
+            return;
+        }
+
+        commentEmptyState.hidden = true;
+        commentList.innerHTML = comments.map((comment) => `
+            <li class="comment-item" data-comment-id="${comment.id}">
+                <div>
+                    <p>${comment.text}</p>
+                    <span class="comment-timestamp">${formatCommentTimestamp(comment.created_at)}</span>
+                </div>
+                <button class="comment-delete-btn" type="button" data-comment-id="${comment.id}" aria-label="Delete comment">×</button>
+            </li>
+        `).join('');
+    }
+
+    async function loadComments(taskId) {
+        try {
+            const comments = await fetchComments(taskId);
+            if (taskId !== activeCommentsTaskId) {
+                return;
+            }
+            renderComments(comments);
+        } catch (error) {
+            if (taskId !== activeCommentsTaskId) {
+                return;
+            }
+            commentError.textContent = 'Unable to load comments right now.';
+        }
+    }
+
+    async function submitComment() {
+        if (isSubmittingComment || !activeCommentsTaskId) {
+            return;
+        }
+
+        const text = commentTextInput.value;
+        commentError.textContent = '';
+
+        if (!text.trim()) {
+            commentError.textContent = 'Comment text cannot be blank.';
+            return;
+        }
+        if (text.length > MAX_COMMENT_LENGTH) {
+            commentError.textContent = `Comment text must be ${MAX_COMMENT_LENGTH} characters or fewer.`;
+            return;
+        }
+
+        isSubmittingComment = true;
+        addCommentButton.disabled = true;
+
+        try {
+            const response = await postComment(activeCommentsTaskId, text);
+
+            if (response.ok) {
+                commentTextInput.value = '';
+                await loadComments(activeCommentsTaskId);
+                return;
+            }
+
+            if (response.status === 422) {
+                const errorBody = await response.json().catch(() => null);
+                commentError.textContent = extractCommentErrorMessage(errorBody) || 'Comment text is invalid.';
+                return;
+            }
+
+            commentError.textContent = 'Unable to add the comment right now. Please try again.';
+        } catch (error) {
+            commentError.textContent = 'Unable to add the comment right now. Please try again.';
+        } finally {
+            isSubmittingComment = false;
+            addCommentButton.disabled = false;
+        }
+    }
+
+    async function handleCommentListClick(event) {
+        const deleteButton = event.target.closest('.comment-delete-btn');
+        if (!deleteButton || deleteButton.disabled) {
+            return;
+        }
+
+        const commentId = deleteButton.dataset.commentId;
+        if (!commentId || !activeCommentsTaskId) {
+            return;
+        }
+
+        deleteButton.disabled = true;
+        commentError.textContent = '';
+
+        try {
+            const response = await deleteCommentById(commentId);
+
+            if (response.ok) {
+                const item = commentList.querySelector(`.comment-item[data-comment-id="${commentId}"]`);
+                if (item) {
+                    item.remove();
+                }
+                if (!commentList.children.length) {
+                    commentEmptyState.hidden = false;
+                }
+                return;
+            }
+
+            if (response.status === 404) {
+                await loadComments(activeCommentsTaskId);
+                return;
+            }
+
+            commentError.textContent = 'Unable to delete the comment right now. Please try again.';
+            deleteButton.disabled = false;
+        } catch (error) {
+            commentError.textContent = 'Unable to delete the comment right now. Please try again.';
+            deleteButton.disabled = false;
         }
     }
 
@@ -679,6 +934,7 @@
                         <div class="task-meta">
                             <span class="priority-pill ${getPriorityClass(task.priority)}">${task.priority}</span>
                             <div class="card-actions">
+                                <button class="comments-btn" type="button">Comments</button>
                                 <button class="edit-btn" type="button">Edit</button>
                             </div>
                         </div>
@@ -760,9 +1016,21 @@
         clearModalErrors();
     }
 
+    function resetCommentsSection() {
+        commentList.innerHTML = '';
+        commentEmptyState.hidden = false;
+        commentTextInput.value = '';
+        commentError.textContent = '';
+    }
+
     function setModalVisibility(isVisible) {
         modalOverlay.hidden = !isVisible;
         modalOverlay.setAttribute('aria-hidden', String(!isVisible));
+    }
+
+    function setCommentsModalVisibility(isVisible) {
+        commentsModalOverlay.hidden = !isVisible;
+        commentsModalOverlay.setAttribute('aria-hidden', String(!isVisible));
     }
 
     function openCreateModal() {
@@ -797,6 +1065,21 @@
         clearModalErrors();
         isSubmittingModal = false;
         submitTaskButton.disabled = false;
+    }
+
+    function openCommentsModal(task) {
+        activeCommentsTaskId = task.id;
+        commentsModalTitle.textContent = `Comments — ${task.title}`;
+        resetCommentsSection();
+        setCommentsModalVisibility(true);
+        commentTextInput.focus();
+        loadComments(task.id);
+    }
+
+    function closeCommentsModal() {
+        setCommentsModalVisibility(false);
+        activeCommentsTaskId = null;
+        resetCommentsSection();
     }
 
     function getTaskPayload() {
@@ -1043,6 +1326,17 @@
             if (task) {
                 openEditModal(task);
             }
+            return;
+        }
+
+        const commentsButton = event.target.closest('.comments-btn');
+        if (commentsButton) {
+            event.preventDefault();
+            const card = commentsButton.closest('.task-card');
+            const task = card ? getTaskById(card.dataset.taskId) : null;
+            if (task) {
+                openCommentsModal(task);
+            }
         }
     }
 
@@ -1052,8 +1346,19 @@
         }
     }
 
+    function handleCommentsModalOverlayClick(event) {
+        if (event.target === commentsModalOverlay) {
+            closeCommentsModal();
+        }
+    }
+
     function handleKeydown(event) {
-        if (event.key === 'Escape' && modalOverlay.hidden === false) {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        if (commentsModalOverlay.hidden === false) {
+            closeCommentsModal();
+        } else if (modalOverlay.hidden === false) {
             closeModal();
         }
     }
@@ -1089,6 +1394,10 @@
     document.getElementById('task-modal-close').addEventListener('click', closeModal);
     document.getElementById('cancel-task-btn').addEventListener('click', closeModal);
     taskForm.addEventListener('submit', submitTaskForm);
+    commentsModalOverlay.addEventListener('click', handleCommentsModalOverlayClick);
+    document.getElementById('comments-modal-close').addEventListener('click', closeCommentsModal);
+    addCommentButton.addEventListener('click', submitComment);
+    commentList.addEventListener('click', handleCommentListClick);
     document.addEventListener('keydown', handleKeydown);
 
     render();
