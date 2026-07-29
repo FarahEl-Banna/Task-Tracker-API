@@ -45,6 +45,21 @@ By both:
 curl "http://127.0.0.1:8000/tasks?status=InProgress&priority=High"
 ```
 
+By assignee (exact match):
+```cmd
+curl "http://127.0.0.1:8000/tasks?assignee=Alex"
+```
+
+By search (matches title or description, case-insensitive):
+```cmd
+curl "http://127.0.0.1:8000/tasks?search=login"
+```
+
+Combined filters:
+```cmd
+curl "http://127.0.0.1:8000/tasks?status=InProgress&priority=High&assignee=Alex&search=login"
+```
+
 ---
 
 ## GET /tasks/{task_id} - Get Single Task
