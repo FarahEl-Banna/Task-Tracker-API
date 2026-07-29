@@ -94,3 +94,41 @@ class TaskResponse(BaseModel):
     assignee: Optional[str]
     created_at: datetime
     updated_at: datetime
+    comment_count: int
+
+
+class Comment(SQLModel, table=True):
+    __tablename__ = "comments"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: int = Field(foreign_key="tasks.id", index=True)
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def validate_text(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise TypeError("text must be a string")
+
+        # Deferred import: business_rules imports TaskStatus from this module,
+        # so importing at module level here would be circular.
+        from app.business_rules import validate_comment_text
+
+        validate_comment_text(value)
+        return value
+
+
+class CommentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task_id: str
+    text: str
+    created_at: datetime

@@ -22,3 +22,10 @@ def created_task(client: TestClient) -> dict:
     response = client.post("/tasks", json={"title": "fixture task"})
     assert response.status_code == 201
     return response.json()
+
+
+@pytest.fixture()
+def created_comment(client: TestClient, created_task: dict) -> dict:
+    response = client.post(f"/tasks/{created_task['id']}/comments", json={"text": "fixture comment"})
+    assert response.status_code == 201
+    return response.json()

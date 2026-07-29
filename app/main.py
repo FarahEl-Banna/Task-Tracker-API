@@ -14,7 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import storage
 from app.business_rules import validate_status_transition
-from app.models import TaskCreate, TaskPriority, TaskResponse, TaskStatus, TaskUpdate
+from app.models import (
+    CommentCreate,
+    CommentResponse,
+    TaskCreate,
+    TaskPriority,
+    TaskResponse,
+    TaskStatus,
+    TaskUpdate,
+)
 from app.storage import get_engine, init_db
 
 app = FastAPI(
@@ -89,6 +97,33 @@ def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
 def delete_task(task_id: str) -> None:
     if not storage.delete_task(task_id):
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+
+
+@app.post(
+    "/tasks/{task_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["comments"],
+)
+def add_comment_to_task(task_id: str, payload: CommentCreate) -> CommentResponse:
+    comment = storage.add_comment(task_id, payload)
+    if comment is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return comment
+
+
+@app.get("/tasks/{task_id}/comments", response_model=list[CommentResponse], tags=["comments"])
+def list_comments_for_task(task_id: str) -> list[CommentResponse]:
+    comments = storage.get_comments_for_task(task_id)
+    if comments is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return comments
+
+
+@app.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["comments"])
+def delete_comment(comment_id: str) -> None:
+    if not storage.delete_comment(comment_id):
+        raise HTTPException(status_code=404, detail=f"Comment with id {comment_id} not found")
 
 
 @app.get("/health")

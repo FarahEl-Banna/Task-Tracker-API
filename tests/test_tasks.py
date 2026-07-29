@@ -24,6 +24,7 @@ def test_create_task_valid_returns_201_with_full_body(client: TestClient):
     assert body["assignee"] == "QA"
     assert body["created_at"]
     assert body["updated_at"]
+    assert body["comment_count"] == 0
 
 
 def test_create_task_missing_title_returns_422(client: TestClient):
@@ -274,3 +275,51 @@ def test_delete_missing_returns_404(client: TestClient):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task with id 999999 not found"
+
+
+def test_get_task_by_id_comment_count_reflects_actual_comment_rows(client: TestClient, created_task: dict):
+    task_id = created_task["id"]
+
+    assert client.get(f"/tasks/{task_id}").json()["comment_count"] == 0
+
+    client.post(f"/tasks/{task_id}/comments", json={"text": "first"})
+    client.post(f"/tasks/{task_id}/comments", json={"text": "second"})
+
+    response = client.get(f"/tasks/{task_id}")
+
+    assert response.status_code == 200
+    assert response.json()["comment_count"] == 2
+
+
+def test_list_tasks_comment_count_is_per_task_not_global(client: TestClient):
+    task_with_comments = client.post("/tasks", json={"title": "Has comments"}).json()
+    task_without_comments = client.post("/tasks", json={"title": "No comments"}).json()
+
+    client.post(f"/tasks/{task_with_comments['id']}/comments", json={"text": "only on this task"})
+
+    body = client.get("/tasks").json()
+    counts_by_title = {task["title"]: task["comment_count"] for task in body}
+
+    assert counts_by_title["Has comments"] == 1
+    assert counts_by_title["No comments"] == 0
+
+
+def test_delete_comment_decrements_task_comment_count(client: TestClient, created_task: dict):
+    task_id = created_task["id"]
+
+    comment = client.post(f"/tasks/{task_id}/comments", json={"text": "temporary"}).json()
+    assert client.get(f"/tasks/{task_id}").json()["comment_count"] == 1
+
+    client.delete(f"/comments/{comment['id']}")
+
+    assert client.get(f"/tasks/{task_id}").json()["comment_count"] == 0
+
+
+def test_patch_task_preserves_comment_count(client: TestClient, created_task: dict):
+    task_id = created_task["id"]
+    client.post(f"/tasks/{task_id}/comments", json={"text": "keep me counted"})
+
+    response = client.patch(f"/tasks/{task_id}", json={"description": "Updated description"})
+
+    assert response.status_code == 200
+    assert response.json()["comment_count"] == 1
