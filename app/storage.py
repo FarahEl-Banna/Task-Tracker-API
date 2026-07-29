@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlmodel import Session, SQLModel, create_engine, delete, select
 
 from app.models import Task, TaskCreate, TaskPriority, TaskResponse, TaskStatus, TaskUpdate
@@ -100,7 +101,12 @@ def add_task(payload: TaskCreate) -> TaskResponse:
     )
 
 
-def get_all_tasks(status: TaskStatus | None = None, priority: TaskPriority | None = None) -> list[TaskResponse]:
+def get_all_tasks(
+    status: TaskStatus | None = None,
+    priority: TaskPriority | None = None,
+    search: str | None = None,
+    assignee: str | None = None,
+) -> list[TaskResponse]:
     engine = get_engine()
     init_db(engine=engine)
 
@@ -110,10 +116,27 @@ def get_all_tasks(status: TaskStatus | None = None, priority: TaskPriority | Non
             statement = statement.where(Task.status == _coerce_status(status))
         if priority is not None:
             statement = statement.where(Task.priority == _coerce_priority(priority))
+        if assignee is not None:
+            statement = statement.where(Task.assignee == assignee)
+        if search is not None and search.strip():
+            search_term = f"%{search.strip()}%"
+            statement = statement.where(
+                or_(Task.title.ilike(search_term), Task.description.ilike(search_term))
+            )
 
         statement = statement.order_by(Task.created_at)
         tasks = session.exec(statement).all()
         return [_task_to_response(task) for task in tasks]
+
+
+def get_distinct_assignees() -> list[str]:
+    engine = get_engine()
+    init_db(engine=engine)
+
+    with Session(engine) as session:
+        statement = select(Task.assignee).distinct()
+        results = session.exec(statement).all()
+        return sorted({assignee for assignee in results if assignee})
 
 
 def get_task_by_id(task_id: str, engine=None) -> Optional[TaskResponse]:

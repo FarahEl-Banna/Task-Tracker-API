@@ -53,6 +53,37 @@
             padding: 0 24px 24px;
         }
 
+        .board-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px 16px;
+        }
+
+        .toolbar-search {
+            flex: 1 1 240px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 9px 11px;
+            font: inherit;
+            font-size: 0.92rem;
+            color: var(--text);
+            background: #fff;
+        }
+
+        .toolbar-select {
+            flex: 0 1 160px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 9px 11px;
+            font: inherit;
+            font-size: 0.92rem;
+            color: var(--text);
+            background: #fff;
+        }
+
         .board {
             display: grid;
             gap: 16px;
@@ -384,6 +415,11 @@
                 align-items: flex-start;
             }
 
+            .board-toolbar {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
             .board {
                 max-width: 100%;
             }
@@ -418,6 +454,20 @@
         <button class="new-task-btn" id="new-task-btn" type="button">New Task</button>
     </div>
 </header>
+<div class="board-toolbar">
+    <input type="search" id="search-input" class="toolbar-search" placeholder="Search tasks..." aria-label="Search tasks">
+    <select id="assignee-filter" class="toolbar-select" aria-label="Filter by assignee">
+        <option value="">All assignees</option>
+        <option value="__unassigned__">Unassigned</option>
+    </select>
+    <select id="priority-filter" class="toolbar-select" aria-label="Filter by priority">
+        <option value="">All priorities</option>
+        <option value="Low">Low</option>
+        <option value="Medium">Medium</option>
+        <option value="High">High</option>
+    </select>
+    <button type="button" id="clear-filters-btn" class="secondary-btn">Clear filters</button>
+</div>
 <main class="app-main">
     <section class="board" id="board" aria-live="polite"></section>
 </main>
@@ -474,6 +524,7 @@
 
 <script>
     const API_BASE = 'http://localhost:8000';
+    const UNASSIGNED_ASSIGNEE_VALUE = '__unassigned__';
     const STATUS_COLUMNS = [
         { key: 'ToDo', label: 'TODO' },
         { key: 'InProgress', label: 'InProgress' },
@@ -492,6 +543,9 @@
     const assigneeInput = document.getElementById('task-assignee');
     const submitTaskButton = document.getElementById('submit-task-btn');
     const formBanner = document.getElementById('form-banner');
+    const searchInput = document.getElementById('search-input');
+    const assigneeFilterInput = document.getElementById('assignee-filter');
+    const priorityFilterSelect = document.getElementById('priority-filter');
 
     let tasks = [];
     let boardState = 'loading';
@@ -503,6 +557,7 @@
     let modalErrors = {};
     let modalGeneralError = '';
     let isSubmittingModal = false;
+    let filterState = { search: '', assignee: '', priority: '' };
 
     function getPriorityClass(priority) {
         return priority ? priority.toLowerCase() : 'medium';
@@ -516,6 +571,38 @@
             }
             return Number(a.id) - Number(b.id);
         });
+    }
+
+    function applyFilters(taskList) {
+        const searchTerm = filterState.search.trim().toLowerCase();
+        return taskList.filter((task) => {
+            const matchesAssignee = !filterState.assignee
+                || (filterState.assignee === UNASSIGNED_ASSIGNEE_VALUE ? !task.assignee : task.assignee === filterState.assignee);
+            const matchesPriority = !filterState.priority || task.priority === filterState.priority;
+            const matchesSearch = !searchTerm
+                || task.title.toLowerCase().includes(searchTerm)
+                || (task.description || '').toLowerCase().includes(searchTerm);
+            return matchesAssignee && matchesPriority && matchesSearch;
+        });
+    }
+
+    async function fetchAssignees() {
+        try {
+            const response = await fetch(`${API_BASE}/tasks/assignees`);
+            if (!response.ok) {
+                throw new Error('Request failed');
+            }
+            const assignees = await response.json();
+            const previousValue = assigneeFilterInput.value;
+            assigneeFilterInput.innerHTML = '<option value="">All assignees</option>'
+                + `<option value="${UNASSIGNED_ASSIGNEE_VALUE}">Unassigned</option>`
+                + assignees.map((assignee) => `<option value="${assignee}">${assignee}</option>`).join('');
+            if (previousValue === UNASSIGNED_ASSIGNEE_VALUE || assignees.includes(previousValue)) {
+                assigneeFilterInput.value = previousValue;
+            }
+        } catch (error) {
+            // Leave the existing assignee options in place if the request fails.
+        }
     }
 
     function renderLoading() {
@@ -579,8 +666,10 @@
             ? `<div class="feedback-message ${feedbackType === 'error' ? 'error' : ''}">${feedbackMessage}</div>`
             : '';
 
+        const filteredTasks = applyFilters(tasks);
+
         board.innerHTML = `${feedbackMarkup}${STATUS_COLUMNS.map((column) => {
-            const columnTasks = sortTasks(tasks.filter((task) => task.status === column.key));
+            const columnTasks = sortTasks(filteredTasks.filter((task) => task.status === column.key));
 
             const cards = columnTasks.length
                 ? columnTasks.map((task) => `
@@ -799,6 +888,7 @@
             if (response.ok) {
                 closeModal();
                 await fetchTasks();
+                await fetchAssignees();
                 return;
             }
 
@@ -968,8 +1058,25 @@
         }
     }
 
+    function handleFilterChange() {
+        filterState.search = searchInput.value;
+        filterState.assignee = assigneeFilterInput.value;
+        filterState.priority = priorityFilterSelect.value;
+        render();
+    }
+
     document.getElementById('new-task-btn').addEventListener('click', () => {
         openCreateModal();
+    });
+
+    searchInput.addEventListener('input', handleFilterChange);
+    assigneeFilterInput.addEventListener('change', handleFilterChange);
+    priorityFilterSelect.addEventListener('change', handleFilterChange);
+    document.getElementById('clear-filters-btn').addEventListener('click', () => {
+        searchInput.value = '';
+        assigneeFilterInput.value = '';
+        priorityFilterSelect.value = '';
+        handleFilterChange();
     });
 
     board.addEventListener('click', handleBoardClick);
@@ -986,5 +1093,6 @@
 
     render();
     fetchTasks();
+    fetchAssignees();
 </script>
 </html>
