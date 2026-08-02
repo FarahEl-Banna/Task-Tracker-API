@@ -1,0 +1,14 @@
+# Normalize all text files to LF in the repo, regardless of each
+# contributor's local core.autocrlf setting. Git still checks files
+# out with the OS-native line ending on disk; this only pins what
+# gets stored/diffed in the repo itself.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+
+# UTF-16 encoded (from `pip freeze` on Windows) — leave untouched,
+# do not attempt text/line-ending normalization.
+requirements.lock.txt -text
